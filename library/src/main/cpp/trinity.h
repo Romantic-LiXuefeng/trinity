@@ -25,10 +25,40 @@
 
 #include <stdint.h>
 
+#define IMAGE 10
+#define VIDEO 11
+
+#define BACKGROUND_COLOR 0
+#define BACKGROUND_IMAGE 1
+
 typedef struct {
     char* file_name;
     int64_t start_time;
     int64_t end_time;
+    int type;
 } MediaClip;
 
-#endif //TRINITY_TRINITY_H
+typedef struct {
+    int action_id;
+    char* effect_name;
+    char* param_name;
+    float value;
+} EffectParam;
+
+typedef enum {
+    kEffect             = 100,
+    kEffectUpdate,
+    kEffectParamUpdate,
+    kEffectDelete,
+    kMusic,
+    kMusicUpdate,
+    kMusicDelete,
+    kFilter,
+    kFilterUpdate,
+    kFilterIntensity,
+    kFilterDelete,
+    kBackgroundColor,
+    kBackgroundImage
+} EffectMessage;
+
+#endif  // TRINITY_TRINITY_H

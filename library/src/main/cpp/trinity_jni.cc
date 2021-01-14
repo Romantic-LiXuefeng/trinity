@@ -20,6 +20,8 @@
 // Created by wlanjie on 2018/11/2.
 //
 
+#define STB_IMAGE_IMPLEMENTATION
+
 #include <jni.h>
 #include <android/log.h>
 #include "android_xlog.h"
@@ -50,7 +52,7 @@ extern "C" {
 #define AUDIO_RECORD_PROCESSOR "com/trinity/record/processor/AudioRecordProcessor"
 #define AUDIO_PLAYER "com/trinity/player/AudioPlayer"
 #define VIDEO_EDITOR "com/trinity/editor/VideoEditor"
-#define VIDEO_EXPORT "com/trinity/editor/VideoExport"
+#define VIDEO_EXPORT "com/trinity/editor/TrinityVideoExport"
 
 using namespace trinity;
 
@@ -91,7 +93,7 @@ static void Android_JNI_createWindowSurface(JNIEnv *env, jobject object, jlong i
     }
 }
 
-static void Android_JNI_resetRenderSize(JNIEnv *env, jobject object, long id, jint width, jint height) {
+static void Android_JNI_resetRenderSize(JNIEnv *env, jobject object, jlong id, jint width, jint height) {
     if (id <= 0) {
         return;
     }
@@ -172,20 +174,24 @@ static void Android_JNI_destroyEGLContext(JNIEnv *env, jobject object, jlong id)
 }
 
 static void
-Android_JNI_record_start(JNIEnv *env, jobject object, jlong handle, jstring path, jint width, jint height, jint video_bit_rate,
+Android_JNI_record_start(JNIEnv *env, jobject object, jlong handle, 
+                         jstring path, jint width, jint height, jint video_bit_rate,
                          jint frame_rate, jboolean use_hard_encode,
-                         jint audio_sample_rate, jint audio_channel, jint audio_bit_rate) {
+                         jint audio_sample_rate, jint audio_channel, jint audio_bit_rate,
+                         jstring tag) {
     if (handle <= 0) {
         return;
     }
     const char* output = env->GetStringUTFChars(path, JNI_FALSE);
+    const char* tag_name = env->GetStringUTFChars(tag, JNI_FALSE);
     auto *record = reinterpret_cast<CameraRecord *>(handle);
     record->StartEncoding(
             output,
             width, height, video_bit_rate, frame_rate,
             use_hard_encode,
-            audio_sample_rate, audio_channel, audio_bit_rate);
+            audio_sample_rate, audio_channel, audio_bit_rate, tag_name);
     env->ReleaseStringUTFChars(path, output);
+    env->ReleaseStringUTFChars(tag, tag_name);
 }
 
 static void Android_JNI_record_stop(JNIEnv *env, jobject object, jlong handle) {
@@ -194,6 +200,90 @@ static void Android_JNI_record_stop(JNIEnv *env, jobject object, jlong handle) {
     }
     auto *preview_controller = reinterpret_cast<CameraRecord *>(handle);
     preview_controller->StopEncoding();
+}
+
+static jint Android_JNI_record_addFilter(JNIEnv* env, jobject object, jlong handle, jstring config_path) {
+    if (handle <= 0) {
+        return -1;
+    }
+    auto* camera_record = reinterpret_cast<CameraRecord*>(handle);
+    const char* filter_config = env->GetStringUTFChars(config_path, JNI_FALSE);
+    int action_id = camera_record->AddFilter(filter_config);
+    env->ReleaseStringUTFChars(config_path, filter_config);
+    return action_id;
+}
+
+static void Android_JNI_record_updateFilter(JNIEnv* env, jobject object,
+        jlong handle, jstring config_path,
+        jint start_time, jint end_time, jint action_id) {
+    if (handle <= 0) {
+        return;
+    }
+    auto* camera_record = reinterpret_cast<CameraRecord*>(handle);
+    const char* filter_config = env->GetStringUTFChars(config_path, JNI_FALSE);
+    camera_record->UpdateFilter(filter_config, start_time, end_time, action_id);
+    env->ReleaseStringUTFChars(config_path, filter_config);
+}
+
+static void Android_JNI_record_updateFilterIntensity(JNIEnv* env, jobject object,
+        jlong handle, jfloat intensity, int action_id) {
+    LOGE("Android_JNI_record_updateFilterIntensity");
+    if (handle <= 0) {
+        return;
+    }
+    auto* camera_record = reinterpret_cast<CameraRecord*>(handle);
+    camera_record->UpdateFilterIntensity(intensity, action_id);
+}
+
+static void Android_JNI_record_deleteFilter(JNIEnv* env, jobject object,
+        jlong handle, jint action_id) {
+    if (handle <= 0) {
+        return;
+    }
+    auto* camera_record = reinterpret_cast<CameraRecord*>(handle);
+    camera_record->DeleteFilter(action_id);
+}
+
+static int Android_JNI_record_addEffect(JNIEnv* env, jobject object, jlong handle, jstring config) {
+    if (handle <= 0) {
+        return -1;
+    }
+    const char* config_buffer = env->GetStringUTFChars(config, JNI_FALSE);
+    auto* camera_record = reinterpret_cast<CameraRecord*>(handle);
+    int actionId = camera_record->AddEffect(config_buffer);
+    env->ReleaseStringUTFChars(config, config_buffer);
+    return actionId;
+}
+
+static void Android_JNI_record_updateEffectTime(JNIEnv* env, jobject object,
+        jlong handle, jint start_time, jint end_time, jint action_id) {
+    if (handle <= 0) {
+        return;
+    }
+    auto camera_record = reinterpret_cast<CameraRecord*>(handle);
+    camera_record->UpdateEffectTime(start_time, end_time, action_id);
+}
+
+static void Android_JNI_record_updateEffectParam(JNIEnv* env, jobject object,
+        jlong handle, jint action_id, jstring effect_name,
+        jstring param_name, jfloat value) {
+    if (handle <= 0) {
+        return;
+    }
+    auto camera_record = reinterpret_cast<CameraRecord*>(handle);
+    const char* effect_name_char = env->GetStringUTFChars(effect_name, JNI_FALSE);
+    const char* param_name_char = env->GetStringUTFChars(param_name, JNI_FALSE);
+    camera_record->UpdateEffectParam(action_id, effect_name_char, param_name_char, value);
+    env->ReleaseStringUTFChars(param_name, param_name_char);
+    env->ReleaseStringUTFChars(effect_name, effect_name_char);
+}
+
+static void Android_JNI_record_deleteEffect(JNIEnv* env, jobject object, jlong handle, jint action_id) {
+    if (handle <= 0) {
+        return;
+    }
+    auto* camera_record = reinterpret_cast<CameraRecord*>(handle);
+    camera_record->DeleteEffect(action_id);
 }
 
 static void Android_JNI_releaseNative(JNIEnv *env, jobject object, jlong id) {
@@ -207,9 +297,9 @@ static void Android_JNI_releaseNative(JNIEnv *env, jobject object, jlong id) {
 }
 
 static jlong
-Android_JNI_audio_record_processor_init(JNIEnv *env, jobject object, jint sampleRate, jint audioBufferSize) {
+Android_JNI_audio_record_processor_init(JNIEnv *env, jobject object, jint sampleRate, jint audioBufferSize, jfloat speed) {
     auto *recorder = new RecordProcessor();
-    recorder->InitAudioBufferSize(sampleRate, audioBufferSize);
+    recorder->InitAudioBufferSize(sampleRate, audioBufferSize, speed);
     return reinterpret_cast<jlong>(recorder);
 }
 
@@ -244,7 +334,7 @@ static void Android_JNI_audio_record_processor_destroy(JNIEnv *env, jobject obje
 }
 
 static jlong Android_JNI_audio_player_create(JNIEnv* env, jobject object) {
-    MusicDecoderController* controller = new MusicDecoderController();
+    auto* controller = new MusicDecoderController();
     return reinterpret_cast<jlong>(controller);
 }
 
@@ -253,7 +343,7 @@ static void Android_JNI_audio_player_start(JNIEnv* env, jobject object, jlong id
         return;
     }
     const char* file_path = env->GetStringUTFChars(path, JNI_FALSE);
-    MusicDecoderController* controller = reinterpret_cast<MusicDecoderController*>(id);
+    auto* controller = reinterpret_cast<MusicDecoderController*>(id);
     controller->Init(0.2f, 44100);
     controller->Start(file_path);
     env->ReleaseStringUTFChars(path, file_path);
@@ -263,7 +353,7 @@ static void Android_JNI_audio_player_resume(JNIEnv* env, jobject object, jlong i
     if (id <= 0) {
         return;
     }
-    MusicDecoderController* controller = reinterpret_cast<MusicDecoderController*>(id);
+    auto* controller = reinterpret_cast<MusicDecoderController*>(id);
     controller->Resume();
 }
 
@@ -271,7 +361,7 @@ static void Android_JNI_audio_player_pause(JNIEnv* env, jobject object, jlong id
     if (id <= 0) {
         return;
     }
-    MusicDecoderController* controller = reinterpret_cast<MusicDecoderController*>(id);
+    auto* controller = reinterpret_cast<MusicDecoderController*>(id);
     controller->Pause();
 }
 
@@ -279,22 +369,23 @@ static void Android_JNI_audio_player_stop(JNIEnv* env, jobject object, jlong id)
     if (id <= 0) {
         return;
     }
-    MusicDecoderController* controller = reinterpret_cast<MusicDecoderController*>(id);
+    auto* controller = reinterpret_cast<MusicDecoderController*>(id);
     controller->Stop();
+    controller->Destroy();
 }
 
 static void Android_JNI_audio_player_release(JNIEnv* env, jobject object, jlong id) {
     if (id <= 0) {
         return;
     }
-    MusicDecoderController* controller = reinterpret_cast<MusicDecoderController*>(id);
+    auto* controller = reinterpret_cast<MusicDecoderController*>(id);
     delete controller;
 }
 
 // video editor
 static jlong Android_JNI_video_editor_create(JNIEnv* env, jobject object, jstring resource_path) {
     const char* path = env->GetStringUTFChars(resource_path, JNI_FALSE);
-    VideoEditor* editor = new VideoEditor(path);
+    VideoEditor* editor = new VideoEditor(env, object, path);
     editor->Init();
     env->ReleaseStringUTFChars(resource_path, path);
     return reinterpret_cast<jlong>(editor);
@@ -306,15 +397,16 @@ Android_JNI_video_editor_surfaceCreated(JNIEnv *env, jobject object, jlong handl
     if (handle <= 0) {
         return;
     }
-    VideoEditor *editor = reinterpret_cast<VideoEditor *>(handle);
-    editor->OnSurfaceCreated(env, object, surface);
+    auto *editor = reinterpret_cast<VideoEditor *>(handle);
+    editor->OnSurfaceCreated(surface);
 }
 
-static void Android_JNI_video_editor_surfaceChanged(JNIEnv* env, jobject object, jlong handle, jint width, jint height) {
+static void Android_JNI_video_editor_surfaceChanged(JNIEnv* env, jobject object, 
+                jlong handle, jint width, jint height) {
     if (handle <= 0) {
         return;
     }
-    VideoEditor *editor = reinterpret_cast<VideoEditor *>(handle);
+    auto *editor = reinterpret_cast<VideoEditor *>(handle);
     editor->OnSurfaceChanged(width, height);
 }
 
@@ -322,15 +414,15 @@ static void Android_JNI_video_editor_surfaceDestroyed(JNIEnv *env, jobject objec
     if (handle <= 0) {
         return;
     }
-    VideoEditor *editor = reinterpret_cast<VideoEditor *>(handle);
-    editor->OnSurfaceDestroyed(env);
+    auto *editor = reinterpret_cast<VideoEditor *>(handle);
+    editor->OnSurfaceDestroyed();
 }
 
 static jlong Android_JNI_video_editor_getVideoDuration(JNIEnv* env, jobject object, jlong handle) {
     if (handle <= 0) {
         return 0;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     return editor->GetVideoDuration();
 }
 
@@ -338,7 +430,7 @@ static jlong Android_JNI_video_editor_getCurrentPosition(JNIEnv* env, jobject ob
     if (handle <= 0) {
         return 0;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     return editor->GetCurrentPosition();
 }
 
@@ -346,7 +438,7 @@ static int Android_JNI_video_editor_getClipsCount(JNIEnv* env, jobject object, j
     if (handle <= 0) {
         return 0;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     return editor->GetClipsCount();
 }
 
@@ -354,7 +446,7 @@ static jobject Android_JNI_video_editor_getClip(JNIEnv* env, jobject object, jlo
     if (handle <= 0) {
         return nullptr;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
 //    return editor->GetClip(index);
     return nullptr;
 }
@@ -363,14 +455,14 @@ static int Android_JNI_video_editor_insertClip(JNIEnv* env, jobject object, jlon
     if (handle <= 0) {
         return 0;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     jclass clip_clazz = env->GetObjectClass(clip);
     jfieldID path_field_id = env->GetFieldID(clip_clazz, "path", "Ljava/lang/String;");
     jstring path_string = static_cast<jstring>(env->GetObjectField(clip, path_field_id));
     const char* media_path = env->GetStringUTFChars(path_string, JNI_FALSE);
     char* file_copy = new char[strlen(media_path) + 1];
     sprintf(file_copy, "%s%c", media_path, 0);
-    MediaClip* media_clip = new MediaClip();
+    auto* media_clip = new MediaClip();
     media_clip->file_name = file_copy;
 
     jfieldID time_range_id = env->GetFieldID(clip_clazz, "timeRange", "Lcom/trinity/editor/TimeRange;");
@@ -390,11 +482,12 @@ static int Android_JNI_video_editor_insertClip(JNIEnv* env, jobject object, jlon
     return result;
 }
 
-static int Android_JNI_video_editor_insertClipWithIndex(JNIEnv* env, jobject object, jlong handle, jint index, jobject clip) {
+static int Android_JNI_video_editor_insertClipWithIndex(JNIEnv* env, jobject object,
+                jlong handle, jint index, jobject clip) {
     if (handle <= 0) {
         return 0;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     return 0;
 }
 
@@ -402,7 +495,7 @@ static void Android_JNI_video_editor_removeClip(JNIEnv* env, jobject object, jlo
     if (handle <= 0) {
         return;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     editor->RemoveClip(index);
 }
 
@@ -410,7 +503,7 @@ static int Android_JNI_video_editor_replaceClip(JNIEnv* env, jobject object, jlo
     if (handle <= 0) {
         return 0;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     return 0;
 }
 
@@ -418,7 +511,7 @@ static jobject Android_JNI_video_editor_getVideoClips(JNIEnv* env, jobject objec
     if (handle <= 0) {
         return nullptr;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     return nullptr;
 }
 
@@ -426,23 +519,25 @@ static jobject Android_JNI_video_editor_getClipTimeRange(JNIEnv* env, jobject ob
     if (handle <= 0) {
         return nullptr;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     return nullptr;
 }
 
-static jlong Android_JNI_video_editor_getVideoTime(JNIEnv* env, jobject object, jlong handle, jint index, jlong clip_time) {
+static jlong Android_JNI_video_editor_getVideoTime(JNIEnv* env, jobject object,
+                jlong handle, jint index, jlong clip_time) {
     if (handle <= 0) {
         return 0;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     return editor->GetVideoTime(index, clip_time);
 }
 
-static jlong Android_JNI_video_editor_getClipTime(JNIEnv* env, jobject object, jlong handle, jint index, jlong video_time) {
+static jlong Android_JNI_video_editor_getClipTime(JNIEnv* env, jobject object,
+                jlong handle, jint index, jlong video_time) {
     if (handle <= 0) {
         return 0;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     return editor->GetClipTime(index, video_time);
 }
 
@@ -450,7 +545,7 @@ static jint Android_JNI_video_editor_getClipIndex(JNIEnv* env, jobject object, j
     if (handle <= 0) {
         return 0;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     return editor->GetClipIndex(time);
 }
 
@@ -458,32 +553,61 @@ static jint Android_JNI_video_editor_addFilter(JNIEnv* env, jobject object, jlon
     if (handle <= 0) {
         return 0;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     const char* config_buffer = env->GetStringUTFChars(config, JNI_FALSE);
-    int id = editor->AddFilter(config_buffer);
+    int action_id = editor->AddFilter(config_buffer);
     env->ReleaseStringUTFChars(config, config_buffer);
-    return id;
+    return action_id;
 }
 
-static void Android_JNI_video_editor_updateFilter(JNIEnv* env, jobject object, jlong handle, jstring config, jint action_id) {
+static void Android_JNI_video_editor_updateFilter(JNIEnv* env, jobject object,
+                jlong handle, jstring config, jint start_time,
+                jint end_time, jint action_id) {
     if (handle <= 0) {
         return;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     const char* config_buffer = env->GetStringUTFChars(config, JNI_FALSE);
-    editor->UpdateFilter(config_buffer, action_id);
+    editor->UpdateFilter(config_buffer, start_time, end_time, action_id);
     env->ReleaseStringUTFChars(config, config_buffer);
 }
 
-static jint Android_JNI_video_editor_addMusic(JNIEnv* env, jobject object, jlong handle, jstring music_path, jlong start_time, jlong end_time) {
+static void Android_JNI_video_editor_deleteFilter(JNIEnv* env, jobject object, jlong handle, jint action_id) {
+    if (handle <= 0) {
+        return;
+    }
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
+    editor->DeleteFilter(action_id);
+}
+
+static jint Android_JNI_video_editor_addMusic(JNIEnv* env, jobject object, jlong handle, jstring music_config) {
     if (handle <= 0) {
         return 0;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
-    const char* path = env->GetStringUTFChars(music_path, JNI_FALSE);
-    int result = editor->AddMusic(path, start_time, end_time);
-    env->ReleaseStringUTFChars(music_path, path);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
+    const char* config = env->GetStringUTFChars(music_config, JNI_FALSE);
+    int result = editor->AddMusic(config);
+    env->ReleaseStringUTFChars(music_config, config);
     return result;
+}
+
+static void Android_JNI_video_editor_updateMusic(JNIEnv* env, jobject object,
+                jlong handle, jstring music_config, jint action_id) {
+    if (handle <= 0) {
+        return;
+    }
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
+    const char* config = env->GetStringUTFChars(music_config, JNI_FALSE);
+    editor->UpdateMusic(config, action_id);
+    env->ReleaseStringUTFChars(music_config, config);
+}
+
+static void Android_JNI_video_editor_deleteMusic(JNIEnv* env, jobject object, jlong handle, jint action_id) {
+    if (handle <= 0) {
+        return;
+    }
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
+    editor->DeleteMusic(action_id);
 }
 
 static int Android_JNI_video_editor_addAction(JNIEnv* env, jobject object, jlong handle, jstring config) {
@@ -491,27 +615,70 @@ static int Android_JNI_video_editor_addAction(JNIEnv* env, jobject object, jlong
         return -1;
     }
     const char* config_buffer = env->GetStringUTFChars(config, JNI_FALSE);
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     int actionId = editor->AddAction(config_buffer);
     env->ReleaseStringUTFChars(config, config_buffer);
     return actionId;
 }
 
-static void Android_JNI_video_editor_updateAction(JNIEnv* env, jobject object, jlong handle, jstring config, jint action_id) {
+static void Android_JNI_video_editor_updateAction(JNIEnv* env, jobject object,
+                jlong handle, jint start_time, jint end_time, jint action_id) {
     if (handle <= 0) {
         return;
     }
-    const char* config_buffer = env->GetStringUTFChars(config, JNI_FALSE);
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
-    editor->UpdateAction(config_buffer, action_id);
-    env->ReleaseStringUTFChars(config, config_buffer);
+    auto editor = reinterpret_cast<VideoEditor*>(handle);
+    editor->UpdateAction(start_time, end_time, action_id);
+}
+
+static void Android_JNI_video_editor_deleteAction(JNIEnv* env, jobject object, jlong handle, jint action_id) {
+    if (handle <= 0) {
+        return;
+    }
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
+    editor->DeleteAction(action_id);
+}
+
+static void Android_JNI_video_editor_setBackgroundColor(JNIEnv* env, jobject object, jlong handle,
+        jint clip_index, jint red, jint green, jint blue, jint alpha) {
+    if (handle <= 0) {
+        return;
+    }
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
+    editor->SetBackgroundColor(clip_index, red, green, blue, alpha);
+}
+
+static jint Android_JNI_video_editor_setBackgroundImage(JNIEnv* env, jobject object, jlong handle, jint clip_index, jstring path) {
+    if (handle <= 0) {
+        return -1;
+    }
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
+    const char* image_path = env->GetStringUTFChars(path, JNI_FALSE);
+    int result = editor->SetBackgroundImage(clip_index, image_path);
+    env->ReleaseStringUTFChars(path, image_path);
+    return result;
+}
+
+static void Android_JNI_video_editor_setFrameSize(JNIEnv* env, jobject object, jlong handle, jint width, int height) {
+    if (handle <= 0) {
+        return;
+    }
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
+    editor->SetFrameSize(width, height);
+}
+
+static void Android_JNI_video_editor_seek(JNIEnv* env, jobject object, jlong handle, jint time) {
+    if (handle <= 0) {
+        return;
+    }
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
+    editor->Seek(time);
 }
 
 static int Android_JNI_video_editor_play(JNIEnv* env, jobject object, jlong handle, jboolean repeat) {
     if (handle <= 0) {
         return 0;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     return editor->Play(repeat, env, object);
 }
 
@@ -519,7 +686,7 @@ static void Android_JNI_video_editor_pause(JNIEnv* env, jobject object, jlong ha
     if (handle <= 0) {
         return;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     editor->Pause();
 }
 
@@ -527,7 +694,7 @@ static void Android_JNI_video_editor_resume(JNIEnv* env, jobject object, jlong h
     if (handle <= 0) {
         return;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     editor->Resume();
 }
 
@@ -535,7 +702,7 @@ static void Android_JNI_video_editor_stop(JNIEnv* env, jobject object, jlong han
     if (handle <= 0) {
         return;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     editor->Stop();
 }
 
@@ -543,28 +710,37 @@ static void Android_JNI_video_editor_release(JNIEnv* env, jobject object, jlong 
     if (handle <= 0) {
         return;
     }
-    VideoEditor* editor = reinterpret_cast<VideoEditor*>(handle);
+    auto* editor = reinterpret_cast<VideoEditor*>(handle);
     editor->Destroy();
     delete editor;
 }
 
 static jlong Android_JNI_video_export_create(JNIEnv* env, jobject object, jstring resource_path) {
-    VideoExport* video_export = new VideoExport(env, object);
+    auto* video_export = new VideoExport(env, object);
     return reinterpret_cast<jlong>(video_export);
 }
 
-static jint Android_JNI_video_export_export(JNIEnv* env, jobject object, jlong handle, jstring export_config,
-                                            jstring export_path, jint width, jint height, jint frame_rate, jint video_bit_rate,
-                                            jint sample_rate, jint channel_count, jint audio_bit_rate) {
+static jint Android_JNI_video_export_export(JNIEnv* env, jobject object,
+                                            jlong handle, jstring export_config,
+                                            jstring export_path, jint width, jint height,
+                                            jint frame_rate, jint video_bit_rate,
+                                            jint sample_rate, jint channel_count, jint audio_bit_rate,
+                                            jboolean media_codec_decode, jboolean media_codec_encode,
+                                            jstring tag) {
     if (handle <= 0) {
         return 0;
     }
-    VideoExport* video_export = reinterpret_cast<VideoExport*>(handle);
+    auto* video_export = reinterpret_cast<VideoExport*>(handle);
     const char* config = env->GetStringUTFChars(export_config, JNI_FALSE);
     const char* path = env->GetStringUTFChars(export_path, JNI_FALSE);
-    int result = video_export->Export(config, path, width, height, frame_rate, video_bit_rate, sample_rate, channel_count, audio_bit_rate);
+    const char* tag_name = env->GetStringUTFChars(tag, JNI_FALSE);
+    int result = video_export->Export(config, path,
+            width, height, frame_rate, video_bit_rate,
+            sample_rate, channel_count, audio_bit_rate,
+            media_codec_decode, media_codec_encode, tag_name);
     env->ReleaseStringUTFChars(export_path, path);
     env->ReleaseStringUTFChars(export_config, config);
+    env->ReleaseStringUTFChars(tag, tag_name);
     return result;
 }
 
@@ -573,14 +749,14 @@ static void Android_JNI_video_export_cancel(JNIEnv* env, jobject object, jlong h
         return;
     }
     VideoExport* video_export = reinterpret_cast<VideoExport*>(handle);
-
+    video_export->Cancel();
 }
 
 static void Android_JNI_video_export_release(JNIEnv* env, jobject object, jlong handle) {
     if (handle <= 0) {
         return;
     }
-    VideoExport* video_export = reinterpret_cast<VideoExport*>(handle);
+    auto* video_export = reinterpret_cast<VideoExport*>(handle);
     delete video_export;
 }
 
@@ -597,13 +773,21 @@ static JNINativeMethod recordMethods[] = {
         {"updateTextureMatrix",  "(J[F)V",                          (void **) Android_JNI_updateTextureMatrix},
         {"destroyWindowSurface", "(J)V",                            (void **) Android_JNI_destroyWindowSurface},
         {"destroyEGLContext",    "(J)V",                            (void **) Android_JNI_destroyEGLContext},
-        {"startEncode",          "(JLjava/lang/String;IIIIZIII)V",  (void **) Android_JNI_record_start},
+        {"startEncode",          "(JLjava/lang/String;IIIIZIIILjava/lang/String;)V",  (void **) Android_JNI_record_start },
         {"stopEncode",           "(J)V",                            (void **) Android_JNI_record_stop},
+        {"addFilter",            "(JLjava/lang/String;)I",          (void **) Android_JNI_record_addFilter},
+        {"updateFilter",         "(JLjava/lang/String;III)V",       (void **) Android_JNI_record_updateFilter },
+        {"updateFilterIntensity","(JFI)V",                          (void **) Android_JNI_record_updateFilterIntensity },
+        {"deleteFilter",         "(JI)V",                           (void **) Android_JNI_record_deleteFilter },
+        {"addEffect",            "(JLjava/lang/String;)I",          (void **) Android_JNI_record_addEffect },
+        {"updateEffectTime",     "(JIII)V",                         (void **) Android_JNI_record_updateEffectTime },
+        {"updateEffectParam",    "(JILjava/lang/String;Ljava/lang/String;F)V", (void **) Android_JNI_record_updateEffectParam},
+        {"deleteEffect",         "(JI)V",                           (void **) Android_JNI_record_deleteEffect },
         {"release",              "(J)V",                            (void **) Android_JNI_releaseNative}
 };
 
 static JNINativeMethod audioRecordProcessorMethods[] = {
-        {"init",                    "(II)J",   (void **) Android_JNI_audio_record_processor_init},
+        {"init",                    "(IIF)J",  (void **) Android_JNI_audio_record_processor_init},
         {"flushAudioBufferToQueue", "(J)V",    (void **) Android_JNI_audio_record_processor_flush_audio_buffer_to_queue},
         {"destroy",                 "(J)V",    (void **) Android_JNI_audio_record_processor_destroy},
         {"pushAudioBufferToQueue",  "(J[SI)I", (void **) Android_JNI_audio_record_processor_push_audio_buffer_to_queue},
@@ -637,10 +821,18 @@ static JNINativeMethod videoEditorMethods[] = {
         {"getClipTime",         "(JIJ)J",                                                (void **) Android_JNI_video_editor_getClipTime },
         {"getClipIndex",        "(JJ)I",                                                 (void **) Android_JNI_video_editor_getClipIndex },
         {"addFilter",           "(JLjava/lang/String;)I",                                (void **) Android_JNI_video_editor_addFilter },
-        {"updateFilter",        "(JLjava/lang/String;I)V",                               (void **) Android_JNI_video_editor_updateFilter },
-        {"addMusic",            "(JLjava/lang/String;JJ)I",                              (void **) Android_JNI_video_editor_addMusic },
+        {"updateFilter",        "(JLjava/lang/String;III)V",                             (void **) Android_JNI_video_editor_updateFilter },
+        {"deleteFilter",        "(JI)V",                                                 (void **) Android_JNI_video_editor_deleteFilter },
+        {"addMusic",            "(JLjava/lang/String;)I",                                (void **) Android_JNI_video_editor_addMusic },
+        {"updateMusic",         "(JLjava/lang/String;I)V",                               (void **) Android_JNI_video_editor_updateMusic },
+        {"deleteMusic",         "(JI)V",                                                 (void **) Android_JNI_video_editor_deleteMusic },
         {"addAction",           "(JLjava/lang/String;)I",                                (void **) Android_JNI_video_editor_addAction },
-        {"updateAction",        "(JLjava/lang/String;I)V",                               (void **) Android_JNI_video_editor_updateAction },
+        {"updateAction",        "(JIII)V",                                               (void **) Android_JNI_video_editor_updateAction },
+        {"deleteAction",        "(JI)V",                                                 (void **) Android_JNI_video_editor_deleteAction },
+        {"setBackgroundColor",  "(JIIIII)V",                                             (void **) Android_JNI_video_editor_setBackgroundColor },
+        {"setBackgroundImage",  "(JILjava/lang/String;)I",                               (void **) Android_JNI_video_editor_setBackgroundImage },
+        {"setFrameSize",        "(JII)V",                                                (void **) Android_JNI_video_editor_setFrameSize },
+        {"seek",                "(JI)V",                                                 (void **) Android_JNI_video_editor_seek },
         {"play",                "(JZ)I",                                                 (void **) Android_JNI_video_editor_play },
         {"pause",               "(J)V",                                                  (void **) Android_JNI_video_editor_pause },
         {"resume",              "(J)V",                                                  (void **) Android_JNI_video_editor_resume },
@@ -650,7 +842,7 @@ static JNINativeMethod videoEditorMethods[] = {
 
 static JNINativeMethod videoExportMethods[] = {
         {"create",              "()J",                                                   (void **) Android_JNI_video_export_create },
-        {"export",              "(JLjava/lang/String;Ljava/lang/String;IIIIIII)I",       (void **) Android_JNI_video_export_export },
+        {"export",              "(JLjava/lang/String;Ljava/lang/String;IIIIIIIZZLjava/lang/String;)I",     (void **) Android_JNI_video_export_export },
         {"cancel",              "(J)V",                                                  (void **) Android_JNI_video_export_cancel },
         {"release",             "(J)V",                                                  (void **) Android_JNI_video_export_release }
 };
@@ -715,6 +907,9 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
 }
 
 JNIEXPORT void JNI_OnUnload(JavaVM *vm, void *reserved) {
+    auto packet_pool = trinity::PacketPool::GetInstance();
+    delete packet_pool;
+    delete AudioPacketPool::GetInstance();
 }
 
 #ifdef __cplusplus

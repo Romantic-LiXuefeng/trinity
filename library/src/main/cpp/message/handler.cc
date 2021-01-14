@@ -24,20 +24,39 @@
 
 namespace trinity {
 
-Handler::Handler(MessageQueue* queue) {
-    this->mQueue = queue;
+Handler::Handler() : queue_(nullptr) {
 }
 
-Handler::~Handler() {
+Handler::Handler(MessageQueue* queue) {
+    this->queue_ = queue;
+}
+
+Handler::~Handler() = default;
+
+void Handler::InitMessageQueue(MessageQueue *queue) {
+    this->queue_ = queue;
 }
 
 int Handler::PostMessage(Message *msg) {
     msg->handler_ = this;
-    return mQueue->EnqueueMessage(msg);
+    if (nullptr == queue_) {
+        return 0;
+    }
+    return queue_->EnqueueMessage(msg);
+}
+
+void Handler::FlushMessage() {
+    if (nullptr == queue_) {
+        return;
+    }
+    queue_->Flush();
 }
 
 int Handler::GetQueueSize() {
-    return mQueue->Size();
+    if (nullptr == queue_) {
+        return 0;
+    }
+    return queue_->Size();
 }
 
 }  // namespace trinity

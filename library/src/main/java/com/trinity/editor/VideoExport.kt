@@ -20,43 +20,56 @@ package com.trinity.editor
 
 import android.content.Context
 import android.view.Surface
+import com.trinity.BuildConfig
 import com.trinity.encoder.MediaCodecSurfaceEncoder
 import com.trinity.listener.OnExportListener
 import com.trinity.util.Trinity
+import java.text.SimpleDateFormat
+import java.util.*
 
 /**
  * Created by wlanjie on 2019-07-30
  */
-class VideoExport(private val context: Context) {
+class TrinityVideoExport(private val context: Context) : VideoExport {
 
   private var mHandle = create()
   // 硬编码对象
-  private var mSurfaceEncoder: MediaCodecSurfaceEncoder ?= null
+  private var mSurfaceEncoder = MediaCodecSurfaceEncoder()
   // Surface 对象
   private var mSurface: Surface ?= null
   private var mListener: OnExportListener ?= null
 
-  fun export(
-      path: String,
-      width: Int,
-      height: Int,
-      frameRate: Int,
-      videoBitRate: Int,
-      sampleRate: Int,
-      channelCount: Int,
-      audioBitRate: Int,
-      l: OnExportListener
-  ): Int {
+  private fun getNow(): String {
+    return if (android.os.Build.VERSION.SDK_INT >= 24) {
+      SimpleDateFormat("yyyy-MM-dd-HH-mm", Locale.US).format(Date())
+    } else {
+      val tms = Calendar.getInstance()
+      tms.get(Calendar.YEAR).toString() + "-" +
+              tms.get(Calendar.MONTH).toString() + "-" +
+              tms.get(Calendar.DAY_OF_MONTH).toString() + "-" +
+              tms.get(Calendar.HOUR_OF_DAY).toString() + "-" +
+              tms.get(Calendar.MINUTE).toString()
+    }
+  }
+
+  override fun export(info: VideoExportInfo, l: OnExportListener): Int {
     mListener = l
+    val tag = "trinity-export-" + BuildConfig.VERSION_NAME + "-" + getNow()
     val resourcePath = context.externalCacheDir?.absolutePath + "/resource.json"
-    return export(mHandle, resourcePath, path, width, height, frameRate, videoBitRate, sampleRate, channelCount, audioBitRate)
+    return export(mHandle, resourcePath, info.path,
+      info.width, info.height, info.frameRate, info.videoBitRate,
+      info.sampleRate, info.channelCount, info.audioBitRate,
+      info.mediaCodecDecode, info.mediaCodecEncode, tag)
   }
 
-  fun cancel() {
-
+  override fun cancel() {
+    if (mHandle <= 0) {
+      return
+    }
+    cancel(mHandle)
   }
 
-  fun release() {
+  override fun release() {
     if (mHandle <= 0) {
       return
     }
@@ -66,7 +79,11 @@ class VideoExport(private val context: Context) {
 
   private external fun create(): Long
 
-  private external fun export(handle: Long, resourcePath: String, path: String, width: Int, height: Int, frameRate: Int, videoBitRate: Int, sampleRate: Int, channelCount: Int, audioBitRate: Int): Int
+  private external fun export(handle: Long, resourcePath: String, path: String,
+                              width: Int, height: Int, frameRate: Int,
+                              videoBitRate: Int, sampleRate: Int, channelCount: Int,
+                              audioBitRate: Int, mediaCodecDecode: Boolean, mediaCodecEncode: Boolean,
+                              tag: String): Int
 
   private external fun cancel(handle: Long)
 
@@ -132,27 +149,15 @@ class VideoExport(private val context: Context) {
    * @param frameRate 录制视频的帧率
    */
   @Suppress("unused")
-  private fun createMediaCodecSurfaceEncoderFromNative(width: Int, height: Int, videoBitRate: Int, frameRate: Int) {
-    try {
-      mSurfaceEncoder = MediaCodecSurfaceEncoder(width, height, videoBitRate, frameRate)
-      mSurface = mSurfaceEncoder?.inputSurface
+  private fun createMediaCodecSurfaceEncoderFromNative(width: Int, height: Int, videoBitRate: Int, frameRate: Int): Int {
+    return try {
+      val ret = mSurfaceEncoder.start(width, height, videoBitRate, frameRate)
+      mSurface = mSurfaceEncoder.getInputSurface()
+      ret
     } catch (e: Exception) {
       e.printStackTrace()
+      -1
     }
-  }
-
-  /**
-   * 由c++回调回来
-   * 调整编码信息
-   * @param width 重新调整编码视频的宽
-   * @param height 重新调整编码视频的高
-   * @param videoBitRate 重新调整编码视频的码率
-   * @param fps 重新调整编码视频的帧率
-   */
-  @Suppress("unused")
-  private fun hotConfigEncoderFromNative(width: Int, height: Int, videoBitRate: Int, fps: Int) {
-    mSurfaceEncoder?.hotConfig(width, height, videoBitRate, fps)
-    mSurface = mSurfaceEncoder?.inputSurface
   }
 
   /**
@@ -162,8 +167,8 @@ class VideoExport(private val context: Context) {
    * @return 返回h264数据的大小, 返回0时数据无效
    */
   @Suppress("unused")
-  private fun pullH264StreamFromDrainEncoderFromNative(data: ByteArray): Long {
-    return mSurfaceEncoder?.pullH264StreamFromDrainEncoderFromNative(data) ?: 0
+  private fun drainEncoderFromNative(data: ByteArray): Int {
+    return mSurfaceEncoder.drainEncoder(data)
   }
 
   /**
@@ -173,7 +178,7 @@ class VideoExport(private val context: Context) {
    */
   @Suppress("unused")
   private fun getLastPresentationTimeUsFromNative(): Long {
-    return mSurfaceEncoder?.lastPresentationTimeUs ?: 0
+    return mSurfaceEncoder.getLastPresentationTimeUs()
   }
 
   /**
@@ -188,11 +193,20 @@ class VideoExport(private val context: Context) {
 
   /**
    * 由c++回调回来
+   * 发送end of stream信号给编码器
+   */
+  @Suppress("unused")
+  private fun signalEndOfInputStream() {
+    mSurfaceEncoder.signalEndOfInputStream()
+  }
+
+  /**
+   * 由c++回调回来
    * 关闭mediaCodec编码器
    */
   @Suppress("unused")
   private fun closeMediaCodecCalledFromNative() {
-    mSurfaceEncoder?.shutdown()
+    mSurfaceEncoder.release()
   }
 
 }

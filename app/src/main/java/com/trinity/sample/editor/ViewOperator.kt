@@ -41,17 +41,12 @@ class ViewOperator(
       return
     }
 
-    var params = playerButton.layoutParams
     bottomMenuView.visibility = View.GONE
-    if (params is ViewGroup.MarginLayoutParams) {
+    val params: ViewGroup.LayoutParams = playerView.layoutParams
+    mPlayerViewMarginTop = if (params is ViewGroup.MarginLayoutParams) {
+      params.topMargin
     } else {
-    }
-
-    params = playerView.layoutParams
-    if (params is ViewGroup.MarginLayoutParams) {
-      mPlayerViewMarginTop = params.topMargin
-    } else {
-      mPlayerViewMarginTop = 0
+      0
     }
 
     mRootViewHeight = rootView.height
@@ -143,7 +138,6 @@ class ViewOperator(
         } else {
           ViewGroup.MarginLayoutParams(params)
         }
-        println("width: ${params.width} height: ${params.height} current: ${currentValue} width: ${mPlayerWidth} playerHeight: ${mPlayerHeight}")
         val marginTop = abs(mPlayerViewMarginTop - mMoveLength) * (1 - currentValue) / (1 - mScaleSize)
         marginParams.setMargins(0, marginTop.toInt(), 0, 0)
         playerView.layoutParams = marginParams

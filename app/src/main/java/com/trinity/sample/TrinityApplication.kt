@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 package com.trinity.sample
 
 import android.app.Application
@@ -39,6 +41,14 @@ class TrinityApplication : Application() {
       }
     }
 
+    val effectLocalDir = externalCacheDir?.absolutePath + "/effect"
+    val effectDir = File(effectLocalDir)
+    if (!effectDir.exists()) {
+      GlobalScope.launch(Dispatchers.IO) {
+        copyAssets("effect", effectLocalDir)
+      }
+    }
+
     val logPath = Environment.getExternalStorageDirectory().absolutePath + "/trinity"
     if (BuildConfig.DEBUG) {
       Xlog.appenderOpen(Xlog.LEVEL_DEBUG, Xlog.AppednerModeAsync, "", logPath, "trinity", 0, "")
@@ -55,7 +65,7 @@ class TrinityApplication : Application() {
       return
     }
     val dest = File(targetPath)
-    dest.parentFile.mkdirs()
+    dest.parentFile?.mkdirs()
     try {
       val inputStream = BufferedInputStream(assets.open(source))
       val out = BufferedOutputStream(FileOutputStream(dest))
